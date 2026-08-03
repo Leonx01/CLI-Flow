@@ -1,0 +1,44 @@
+name: chess-player-digest
+description: Look up a chess.com player's stats and recent games, rank by accuracy — demonstrates foreach, concurrency, local/rank, error handling
+
+inputs:
+  username: { type: string, required: true, description: "Chess.com username" }
+  game_count: { type: number, default: 5 }
+  output_path: { type: string, default: "./chess-digest.json" }
+
+outputs: [stats, ranked_games]
+
+on_error: skip
+
+steps:
+  get-stats:
+    adapter: chess/stats
+    args:
+      username: $username
+    output: stats
+
+  get-games:
+    adapter: chess/games
+    args:
+      username: $username
+      limit: $game_count
+    on_error: retry
+    retries: 2
+    timeout: 30
+    output: recent_games
+
+  rank-by-accuracy:
+    adapter: local/rank
+    depends_on: [get-games]
+    args:
+      sources: '[{"tag":"games","items":${{ args.recent_games | json }}}]'
+      by: accuracy
+      top: $game_count
+    output: ranked_games
+
+  save-digest:
+    adapter: local/save-json
+    depends_on: [get-stats, rank-by-accuracy]
+    args:
+      path: $output_path
+      data: '{"username":${{ args.username | json }},"stats":${{ args.stats | json }},"top_games":${{ args.ranked_games | json }}}'

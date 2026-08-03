@@ -1,0 +1,60 @@
+name: interact-demo
+description: "演示人机交互节点：select / multi-select / input / confirm"
+
+inputs:
+  shops:
+    type: array
+    default:
+      - { name: "Store A", id: 1 }
+      - { name: "Store B", id: 2 }
+      - { name: "Store C", id: 3 }
+  products:
+    type: array
+    default:
+      - { name: "Widget", price: 9.9 }
+      - { name: "Gadget", price: 19.9 }
+      - { name: "Gizmo", price: 29.9 }
+
+outputs: [target_shop, selected_products, keyword]
+
+steps:
+  choose-shop:
+    description: "选择店铺"
+    interact:
+      type: select
+      from: $shops
+      display: name
+      message: "选择要操作的店铺"
+    output:
+      as: target_shop
+      map:
+        shop_name: name
+        shop_id: id
+
+  choose-products:
+    description: "选择产品"
+    interact:
+      type: multi-select
+      from: $products
+      display: name
+      message: "选择要包含的产品"
+    output: selected_products
+    depends_on: [choose-shop]
+
+  enter-keyword:
+    description: "输入关键词"
+    interact:
+      type: input
+      message: "输入搜索关键词"
+      default: "electronics"
+    output: keyword
+    depends_on: [choose-products]
+
+  save-summary:
+    description: "保存选中的产品（需确认）"
+    adapter: local/save-json
+    confirm: "确认保存本次选择结果？"
+    args:
+      path: "output/interact-demo-summary.json"
+      data: "$selected_products"
+    depends_on: [enter-keyword]

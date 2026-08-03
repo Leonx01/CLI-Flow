@@ -1,0 +1,280 @@
+name: tech-stack-radar
+description: 技术栈雷达 — 盘点 cliflow+opencli 依赖 → 查最新版/下载趋势/版本差距 → 采集生态热度与 EOL → LLM 研判 → 生成升级方案与雷达报告
+
+# ── 前置条件 ──
+#   1. export DASHSCOPE_API_KEY=...   （LLM 研判/趋势/升级方案步骤依赖）
+#   2. 全部数据源走 public API，无需登录。但 public API 间歇性 fetch failed 常见，
+#      所有采集步骤都挂 on_error: retry。
+#   3. osv/nvd 漏洞源在内网被域名策略拦截，本工作流未包含安全漏洞线。
+
+inputs:
+  package_files:
+    type: string
+    default: "./package.json"
+    description: "逗号分隔的 package.json 路径（相对于运行目录；多项目用 --arg package_files=a/package.json,b/package.json）"
+  track_language: { type: string, default: "typescript", description: "github-trending 语言过滤" }
+  runtimes: { type: array, default: ["nodejs", "typescript"], description: "查 EOL 生命周期的运行时/工具" }
+  llm_model: { type: string, default: "qwen-plus" }
+  out_dir: { type: string, default: "./output/tech-radar" }
+
+outputs: [report_files]
+
+timeout: 3600
+max_parallel: 6
+checkpoint: true
+
+steps:
+  # ═══ 阶段一：盘点技术栈 ═══
+
+  list-deps:
+    description: "读取两个项目的 package.json，去重出依赖清单"
+    adapter: local/list-deps
+    args:
+      paths: $package_files
+      include_dev: "true"
+      include_peer: "true"
+    output: all_deps
+
+  pick-deps:
+    description: "人工闸门 1 — 勾选要深度追踪的依赖"
+    interact:
+      type: multi-select
+      from: $all_deps
+      display: name
+      message: "勾选要深度追踪的依赖（默认可全选；runtime 类风险更高）"
+    output: tracked_deps
+    depends_on: [list-deps]
+
+  # ═══ 阶段二：版本情报（foreach 依赖） ═══
+
+  fetch-latest:
+    description: "查每个包的 npm 最新版本与元信息"
+    adapter: npm/package
+    foreach: $tracked_deps
+    concurrency: 4
+    delay: 300
+    args:
+      # npm/package 的位置参数是包名
+      name: "$item.name"
+    on_error: retry
+    retries: 2
+    timeout: 600
+    output: npm_meta
+    depends_on: [pick-deps]
+
+  fetch-downloads:
+    description: "查每个包的周下载量"
+    adapter: npm/downloads
+    foreach: $tracked_deps
+    concurrency: 4
+    delay: 300
+    args:
+      name: "$item.name"
+    on_error: skip
+    timeout: 600
+    output: npm_downloads
+    depends_on: [pick-deps]
+
+  merge-current:
+    description: "把当前版本(来自 list-deps)与最新版本(来自 npm)按包名合并"
+    # 确定性 join 替代旧版 LLM 合并：无 token 消耗、无网络故障点、结果必然正确。
+    # tracked_deps 保留全部字段（name/dep_type/current_version/sources），从 npm_meta 取最新版等。
+    adapter: local/join
+    args:
+      left: "${{ args.tracked_deps | json }}"
+      right: "${{ args.npm_meta | json }}"
+      on: name
+      pick: "latestVersion,repository,modified"
+      default: ""
+    output: merged_versions
+    depends_on: [fetch-latest]
+
+  version-gap:
+    description: "计算当前版本与最新版本的差距和陈旧度"
+    adapter: local/version-diff
+    args:
+      items: "$merged_versions"
+      current_field: current_version
+      latest_field: latestVersion
+    output: versioned_deps
+    depends_on: [merge-current]
+
+  attach-downloads:
+    description: "把周下载量并入版本信息（按 name==package 匹配）"
+    # 同上：确定性 join 替代 LLM。npm_downloads 的包名字段为 package。
+    adapter: local/join
+    args:
+      left: "${{ args.versioned_deps | json }}"
+      right: "${{ args.npm_downloads | json }}"
+      on: "name:package"
+      pick: downloads
+      default: "0"
+    output: enriched_deps
+    depends_on: [version-gap, fetch-downloads]
+
+  # ═══ 阶段三：生态热度（扇出） ═══
+
+  fetch-trending:
+    description: "GitHub 趋势仓库（本语言）"
+    adapter: github-trending/repos
+    args:
+      language: $track_language
+      since: weekly
+      limit: 25
+    on_error: retry
+    retries: 2
+    timeout: 300
+    output: trending
+    depends_on: [list-deps]
+
+  fetch-hn:
+    description: "HackerNews 讨论（逐依赖搜索，保持与包对齐）"
+    adapter: hackernews/search
+    foreach: $tracked_deps
+    concurrency: 2
+    delay: 1000
+    flatten: false
+    args:
+      query: "$item.name"
+      limit: 3
+    on_error: retry
+    retries: 2
+    timeout: 900
+    output: hn_groups
+    depends_on: [pick-deps]
+
+  fetch-lobsters:
+    description: "Lobste.rs 相关标签讨论"
+    adapter: lobsters/tag
+    args:
+      tag: $track_language
+    on_error: skip
+    timeout: 300
+    output: lobsters_stories
+
+  merge-discussions:
+    description: "合并 HN + Lobsters 讨论并去重"
+    adapter: local/deduplicate
+    args:
+      sources: '[{"tag":"hackernews","items":${{ args.hn_groups.flat() | json }}},{"tag":"lobsters","items":${{ args.lobsters_stories | default([]) | json }}}]'
+      by: title
+      tag_as: source
+    output: discussions
+    depends_on: [fetch-hn, fetch-lobsters]
+    on_error: skip
+
+  # ═══ 阶段四：风险面（EOL） ═══
+
+  fetch-eol:
+    description: "查运行时/工具的生命周期（EOL）"
+    adapter: endoflife/product
+    foreach: $runtimes
+    concurrency: 2
+    delay: 500
+    args:
+      product: "$item"
+    on_error: skip
+    timeout: 600
+    output: eol_raw
+    depends_on: [list-deps]
+
+  # ═══ 阶段五：LLM 综合 ═══
+
+  score-staleness:
+    description: "按陈旧度 + 下载量排序（陈旧优先、热门加权）"
+    adapter: local/score
+    args:
+      items: "${{ args.enriched_deps | json }}"
+      weights: '{"staleness":0.8,"downloads":0.2}'
+      name_field: name
+      top: 50
+    output: scored_deps
+    depends_on: [attach-downloads]
+
+  classify-updates:
+    description: "LLM 逐包研判：升级属于新特性/破坏性/常规，风险几何"
+    adapter: dashscope/chat
+    foreach: $scored_deps
+    concurrency: 2
+    flatten: false
+    args:
+      model: $llm_model
+      json_mode: true
+      system: "你是资深工程师做依赖升级评估。基于版本差距与包信息给出务实判断，不夸大。"
+      prompt: |
+        对以下依赖给出一句话升级研判。
+        输出 JSON 对象：verdict（一句话，含是否破坏性、是否值得现在升），change_type（major/minor/patch/none），risk（high/medium/low）。
+
+        依赖：$item
+    output: verdicts
+    depends_on: [score-staleness]
+    on_error: skip
+    timeout: 900
+
+  analyze-trend:
+    description: "LLM 从趋势仓库+讨论提炼生态动向"
+    adapter: dashscope/chat
+    args:
+      model: $llm_model
+      system: "你是技术趋势分析师。只依据给定数据总结，不编造。"
+      prompt: |
+        根据以下 GitHub 趋势仓库和社区讨论，用 3-5 条要点总结本语言生态近期动向。
+
+        趋势仓库：
+        ${{ args.trending | json }}
+
+        社区讨论：
+        ${{ args.discussions | default([]) | json }}
+    output: trend_summary
+    depends_on: [fetch-trending, merge-discussions]
+    on_error: skip
+    timeout: 300
+
+  # ═══ 阶段六：决策与产出 ═══
+
+  pick-upgrades:
+    description: "人工闸门 2 — 从陈旧度排名中选要写升级方案的包"
+    interact:
+      type: multi-select
+      from: $scored_deps
+      display: name
+      message: "选择要生成详细升级方案的依赖（建议选 major 差距的）"
+    output: upgrade_targets
+    depends_on: [score-staleness]
+
+  gen-upgrade-plans:
+    description: "LLM 为选中的包生成升级方案"
+    adapter: dashscope/chat
+    foreach: $upgrade_targets
+    concurrency: 2
+    flatten: false
+    args:
+      model: $llm_model
+      json_mode: true
+      system: "你是资深工程师。给出可执行的升级步骤，务实、分步，标注风险点与回归验证方式。禁止编造 API 变更细节。"
+      prompt: |
+        为以下依赖写升级方案。
+        输出 JSON 对象：plan（分步骤的升级操作，字符串，用换行分隔），risks（风险点数组），verify（验证方式数组）。
+        当前 $item.current_version → 最新 $item.latest_version（差距 $item.gap_type）。
+
+        依赖：$item
+    output: upgrade_plans
+    depends_on: [pick-upgrades]
+    on_error: skip
+    timeout: 900
+
+  build-report:
+    description: "生成 radar.md / upgrade-plan.md / ecosystem.md / radar.csv / report.json"
+    adapter: local/radar-report
+    confirm: "将把技术栈雷达报告写入输出目录。确认继续？"
+    args:
+      packages: "${{ args.scored_deps | default([]) }}"
+      verdicts: "${{ args.verdicts | default([]) }}"
+      upgrade_plans: "${{ args.upgrade_plans | default([]) }}"
+      eol: "${{ args.eol_raw | default([]) }}"
+      trending: "${{ args.trending | default([]) }}"
+      discussions: "${{ args.discussions | default([]) }}"
+      trend_summary: "${{ args.trend_summary | default([]) }}"
+      out_dir: $out_dir
+    output: report_files
+    depends_on: [score-staleness, classify-updates, analyze-trend, fetch-eol, gen-upgrade-plans]

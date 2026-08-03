@@ -1,0 +1,15 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+*.log
+output/
+
+# 私有业务内容（迁出开源库，仅本地保留）
+private-workflows/
+.private/
+.private-adapters/
+docs/private-adapters.md
+
+# 密钥
+.env

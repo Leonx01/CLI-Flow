@@ -1,0 +1,42 @@
+name: weather-travel-planner
+description: Check weather for a city and find nearby train stations — demonstrates DAG fan-out, depends_on, output.map, and local/save-json
+
+inputs:
+  city: { type: string, required: true, description: "City name in Chinese (e.g. 杭州)" }
+  output_path: { type: string, default: "./travel-plan.json" }
+
+outputs: [weather, stations, plan]
+
+steps:
+  # ─── Two independent lookups run in parallel (no depends_on = auto-parallel) ───
+
+  check-weather:
+    adapter: wttr/current
+    args:
+      location: $city
+    output:
+      as: weather
+      map:
+        temp: temperature
+        condition: description
+        humidity: humidity
+
+  find-stations:
+    adapter: 12306/stations
+    args:
+      keyword: $city
+    output:
+      as: stations
+      map:
+        name: station
+        code: telecode
+
+  # ─── Fan-in: combine weather + stations into a plan ───
+
+  save-plan:
+    adapter: local/save-json
+    depends_on: [check-weather, find-stations]
+    args:
+      path: $output_path
+      data: '{"city":${{ args.city | json }},"weather":${{ args.weather | json }},"stations":${{ args.stations | json }}}'
+    output: plan
