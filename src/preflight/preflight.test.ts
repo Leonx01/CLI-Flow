@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { McpBridge } from '@jackwener/opencli/bridge/mcp';
 import { cli, Strategy } from '@jackwener/opencli/registry';
 import { preflightWorkflow } from './preflight.js';
 import type { McpBridgeConfig } from '@jackwener/opencli/bridge/types';
 
 const TEST_DIR = path.resolve(
-  path.dirname(new URL(import.meta.url).pathname),
+  path.dirname(fileURLToPath(import.meta.url)),
   '../../test',
 );
 const MOCK_SERVER = path.resolve(TEST_DIR, 'mock-mcp-server.cjs');

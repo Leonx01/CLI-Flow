@@ -1,0 +1,19 @@
+name: nested-single
+steps:
+  seed:
+    adapter: mcp-test-mock/hello
+    args:
+      name: seed
+  sub-pipeline:
+    type: workflow
+    workflow: e2e-nested-child.yaml
+    args:
+      task_id: single-run
+    depends_on: [seed]
+    output: sub_result
+  use-child-output:
+    adapter: mcp-test-mock/echo
+    args:
+      message: "${{ args.sub_result.enriched[0].message }}"
+      times: 1
+    depends_on: [sub-pipeline]

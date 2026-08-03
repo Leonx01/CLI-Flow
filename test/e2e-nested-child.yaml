@@ -1,0 +1,34 @@
+name: item-processor
+inputs:
+  task_id:
+    type: string
+    required: true
+outputs:
+  - enriched
+steps:
+  validate:
+    adapter: mcp-test-mock/hello
+    args:
+      name: check
+    output: validation
+  transform:
+    adapter: mcp-test-mock/echo
+    args:
+      message: "transformed-$task_id"
+      times: 1
+    depends_on: [validate]
+    output: transformed
+  tag:
+    adapter: mcp-test-mock/echo
+    args:
+      message: "tagged-$task_id"
+      times: 1
+    depends_on: [validate]
+    output: tags
+  enrich:
+    adapter: mcp-test-mock/echo
+    args:
+      message: "enriched-$task_id"
+      times: 1
+    depends_on: [transform, tag]
+    output: enriched

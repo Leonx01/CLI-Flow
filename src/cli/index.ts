@@ -17,6 +17,15 @@ async function bootstrap() {
   const { discoverClis, USER_CLIS_DIR } = await import('@jackwener/opencli/discovery' as string);
   // Packaged adapters first, then user-local overrides/additions (~/.opencli/clis)
   await discoverClis(clisDir, USER_CLIS_DIR);
+
+  // Bridge discovery: MCP/API/CLI bridges configured in ~/.opencli/bridges/
+  // Each bridge's tools auto-register as adapters (e.g. mcp-ddg/search).
+  try {
+    const { discoverBridges } = await import('@jackwener/opencli/bridge/discovery' as string);
+    await discoverBridges();
+  } catch {
+    // Bridge discovery is optional — if the module or config is absent, continue.
+  }
 }
 
 const program = new Command('cliflow')

@@ -1,0 +1,23 @@
+name: mid-processor
+inputs:
+  batch_idx:
+    required: true
+steps:
+  mid_items:
+    adapter: mcp-test-mock/echo
+    args:
+      message: "mid-$batch_idx"
+      times: 2
+  drill-down:
+    type: workflow
+    workflow: e2e-nested-child.yaml
+    foreach: $mid_items
+    args:
+      task_id: $item.index
+    depends_on: [mid_items]
+    output: drilled
+  mid_summary:
+    adapter: mcp-test-mock/hello
+    args:
+      name: "mid-done-$batch_idx"
+    depends_on: [drill-down]

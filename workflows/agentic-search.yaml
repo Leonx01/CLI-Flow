@@ -1,0 +1,131 @@
+name: agentic-search
+description: |
+  Agentic search — multi-round research workflow:
+  1. Initial DDG search → get broad results
+  2. DeepSeek analyzes findings, generates refined follow-up queries
+  3. Split queries into individual search tasks
+  4. Deep-search each refined query in parallel
+  5. DeepSeek synthesizes final comprehensive answer with citations
+
+inputs:
+  question:
+    type: string
+    required: true
+    description: "Research question or topic to investigate"
+  rounds:
+    type: number
+    default: 2
+    description: "Number of search rounds (1-3)"
+  model:
+    type: string
+    default: "deepseek-chat"
+    description: "DeepSeek model for analysis and synthesis"
+
+timeout: 600
+max_parallel: 4
+checkpoint: true
+
+steps:
+  # ═══ Round 1: Initial Search ═══
+
+  initial-search:
+    description: "Broad DDG search for the research question"
+    adapter: mcp-ddg/search
+    args:
+      query: $question
+      max_results: 5
+    output: initial_results
+    timeout: 30
+
+  # ═══ Round 1: Analyze & Generate Follow-up Queries ═══
+
+  analyze-results:
+    description: "DeepSeek analyzes initial results and identifies knowledge gaps"
+    adapter: deepseek/chat
+    args:
+      model: $model
+      temperature: 0.3
+      max_tokens: 2048
+      system: |
+        You are a research analyst. Given search results, do TWO things:
+        1. Extract the key findings relevant to the question (2-3 sentences)
+        2. Generate 3 specific, diverse follow-up search queries that would fill knowledge gaps
+
+        Output format (strict):
+        ---FINDINGS---
+        <2-3 sentence summary of key findings>
+        ---QUERIES---
+        <query 1>
+        <query 2>
+        <query 3>
+      prompt: |
+        Research question: $question
+
+        Search results:
+        ${{ args.initial_results | json }}
+    depends_on: [initial-search]
+    output: analysis
+    timeout: 60
+    on_error: skip
+
+  # ═══ Extract Queries into Array ═══
+
+  extract-queries:
+    description: "Parse the ---QUERIES--- section into an array of individual queries"
+    adapter: local/split-lines
+    args:
+      text: "${{ args.analysis[0].content.split('---QUERIES---')[1] || args.analysis[0].content }}"
+      skip_empty: true
+      trim_numbered: true
+    depends_on: [analyze-results]
+    output: refined_queries
+    condition: "${{ args.analysis && args.analysis.length > 0 }}"
+
+  # ═══ Round 2: Deep Search (foreach refined query) ═══
+
+  deep-search:
+    description: "Search each refined query in parallel"
+    adapter: mcp-ddg/search
+    foreach: $refined_queries
+    concurrency: 3
+    delay: 500
+    args:
+      query: "$item.query"
+      max_results: 3
+    depends_on: [extract-queries]
+    output: deep_results
+    on_error: skip
+    timeout: 30
+
+  # ═══ Final Synthesis ═══
+
+  synthesize:
+    description: "DeepSeek synthesizes all findings into a comprehensive research answer"
+    adapter: deepseek/chat
+    args:
+      model: $model
+      temperature: 0.5
+      max_tokens: 4096
+      system: |
+        You are a research synthesizer. Write a comprehensive, well-structured answer to the user's research question based on ALL the search results provided.
+
+        Your answer should:
+        - Start with a direct, concise answer to the question
+        - Include key findings from the initial search
+        - Incorporate deeper insights from follow-up searches
+        - Cite specific sources when possible (mention the URL or title)
+        - End with a brief "Further Reading" section listing the most useful sources
+
+        Use markdown formatting. Be factual — only use information present in the provided search results.
+      prompt: |
+        Research question: $question
+
+        === INITIAL SEARCH RESULTS ===
+        ${{ args.initial_results | json }}
+
+        === DEEP SEARCH RESULTS ===
+        ${{ args.deep_results | json }}
+    depends_on: [deep-search, initial-search]
+    output: final_answer
+    timeout: 120
+    on_error: skip

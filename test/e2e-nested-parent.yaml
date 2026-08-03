@@ -1,0 +1,35 @@
+name: nested-pipeline
+steps:
+  init:
+    adapter: mcp-test-mock/hello
+    args:
+      name: Pipeline
+    output: init_result
+  generate-items:
+    adapter: mcp-test-mock/echo
+    args:
+      message: task
+      times: 3
+    depends_on: [init]
+    output: work_items
+  generate-config:
+    adapter: mcp-test-mock/echo
+    args:
+      message: config-v1
+      times: 1
+    depends_on: [init]
+    output: config
+  process-items:
+    type: workflow
+    workflow: e2e-nested-child.yaml
+    foreach: $work_items
+    concurrency: 2
+    args:
+      task_id: $item.index
+    depends_on: [generate-items]
+    output: processed
+  final:
+    adapter: mcp-test-mock/hello
+    args:
+      name: completed
+    depends_on: [process-items]

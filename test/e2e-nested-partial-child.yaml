@@ -1,0 +1,12 @@
+name: partial-child
+steps:
+  ok-step:
+    adapter: mcp-test-mock/echo
+    args:
+      message: ok
+      times: 1
+  bad-step:
+    adapter: nonexistent-site/command
+    args:
+      query: boom
+    depends_on: [ok-step]

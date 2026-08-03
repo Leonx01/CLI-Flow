@@ -1,0 +1,14 @@
+name: e2e-workflow
+description: E2E fixture for preflight and parser tests
+steps:
+  greet:
+    adapter: mcp-test-mock/hello
+    args:
+      name: World
+    output: greeting
+  summarize:
+    adapter: mcp-test-mock/echo
+    args:
+      message: done
+      times: 1
+    depends_on: [greet]

@@ -1,0 +1,7 @@
+name: partial-parent
+steps:
+  call-child:
+    type: workflow
+    workflow: e2e-nested-partial-child.yaml
+    args:
+      task_id: x

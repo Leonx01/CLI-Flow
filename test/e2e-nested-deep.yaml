@@ -1,0 +1,21 @@
+name: deep-nested-pipeline
+steps:
+  bootstrap:
+    adapter: mcp-test-mock/echo
+    args:
+      message: batch
+      times: 2
+    output: batches
+  run-batches:
+    type: workflow
+    workflow: e2e-nested-mid.yaml
+    foreach: $batches
+    args:
+      batch_idx: $item.index
+    depends_on: [bootstrap]
+    output: batch_results
+  grand_final:
+    adapter: mcp-test-mock/hello
+    args:
+      name: all-done
+    depends_on: [run-batches]
