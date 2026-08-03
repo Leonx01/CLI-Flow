@@ -12,6 +12,10 @@ export async function createWebServer({ definition }: { definition: WorkflowDefi
   wss.on('error', (err) => console.error(`WebSocket error: ${err.message}`));
   const adapter = new WebAdapter(wss);
 
+  // Whether this server process has started a run. Lets the page know not to
+  // auto-run again after a reload (auto-run fires only once per process).
+  let runStarted = false;
+
   app.use(express.json());
 
   // Serve Vite-built frontend
@@ -27,9 +31,15 @@ export async function createWebServer({ definition }: { definition: WorkflowDefi
     res.json(definition);
   });
 
+  // API: server process state (used by the auto-run button)
+  app.get('/api/state', (_req, res) => {
+    res.json({ runStarted });
+  });
+
   // API: run workflow
   app.post('/api/run', async (req, res) => {
     try {
+      runStarted = true;
       const { executeWorkflow } = await import('../engine/engine.js');
       const { getRegistry } = await import('@jackwener/opencli/registry');
       const callbacks = adapter.getCallbacks();

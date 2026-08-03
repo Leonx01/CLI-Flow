@@ -5,6 +5,8 @@ interface ToolbarProps {
   status: string;
   connected: boolean;
   onRun: () => void;
+  autoRun: boolean;
+  onToggleAutoRun: () => void;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -23,7 +25,7 @@ const STATUS_COLORS: Record<string, string> = {
   paused: '#bf8700',
 };
 
-export default function Toolbar({ workflowName, status, connected, onRun }: ToolbarProps) {
+export default function Toolbar({ workflowName, status, connected, onRun, autoRun, onToggleAutoRun }: ToolbarProps) {
   const isRunning = status === 'running';
 
   return React.createElement('div', {
@@ -56,6 +58,17 @@ export default function Toolbar({ workflowName, status, connected, onRun }: Tool
           borderRadius: 'var(--radius-sm)',
         } as React.CSSProperties,
       }, STATUS_LABELS[status] || status),
+      React.createElement('button', {
+        onClick: onToggleAutoRun,
+        title: autoRun ? 'Auto-run ON: starts the workflow when the page loads' : 'Auto-run OFF: click ▶ Run to start',
+        style: {
+          padding: '5px 12px', borderRadius: 6, cursor: 'pointer',
+          border: `1px solid ${autoRun ? '#2da44e' : 'var(--border-color)'}`,
+          background: autoRun ? 'rgba(45, 164, 78, 0.1)' : 'var(--bg-card)',
+          color: autoRun ? '#1a7f37' : 'var(--text-muted)',
+          fontSize: 12, fontWeight: 600, transition: 'all 0.15s',
+        } as React.CSSProperties,
+      }, autoRun ? '⟳ Auto-run ON' : '⟳ Auto-run OFF'),
       React.createElement('button', {
         onClick: onRun,
         disabled: isRunning,

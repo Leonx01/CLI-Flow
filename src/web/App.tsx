@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Canvas from './Canvas.js';
 import Toolbar from './panels/Toolbar.js';
 import InteractPanel from './panels/InteractPanel.js';
@@ -33,6 +33,10 @@ export default function App() {
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [connected, setConnected] = useState(false);
   const [showTrace, setShowTrace] = useState(true);
+  const [autoRun, setAutoRun] = useState<boolean>(() => {
+    try { return localStorage.getItem('cliflow:autoRun') === '1'; } catch { return false; }
+  });
+  const autoRunChecked = useRef(false);
 
   // Load definition from server
   useEffect(() => {
@@ -175,6 +179,30 @@ export default function App() {
     fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
   }, [ws]);
 
+  // Auto-run: with the toggle ON, start the workflow once per server process.
+  // /api/state.runStarted guards against re-running after a page reload.
+  useEffect(() => {
+    if (!autoRun || !ws || autoRunChecked.current) return;
+    autoRunChecked.current = true;
+    fetch('/api/state')
+      .then(r => r.json())
+      .then((s: { runStarted: boolean }) => {
+        if (!s.runStarted) {
+          setTrace(prev => addTrace(prev, { ts: Date.now(), type: 'workflow', message: '⟳ Auto-run: starting workflow', level: 'info' }));
+          handleRun();
+        }
+      })
+      .catch(() => {});
+  }, [autoRun, ws, handleRun]);
+
+  const handleToggleAutoRun = useCallback(() => {
+    setAutoRun(prev => {
+      const next = !prev;
+      try { localStorage.setItem('cliflow:autoRun', next ? '1' : '0'); } catch { /* private mode */ }
+      return next;
+    });
+  }, []);
+
   const handleInteractSubmit = useCallback((answer: unknown) => {
     fetch('/api/interact', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answer }) });
     setPendingInteract(null);
@@ -194,6 +222,8 @@ export default function App() {
       status: workflowStatus,
       connected,
       onRun: handleRun,
+      autoRun,
+      onToggleAutoRun: handleToggleAutoRun,
     }),
     React.createElement('div', { style: { display: 'flex', flex: 1, overflow: 'hidden' } },
       React.createElement('div', { style: { flex: 1, display: 'flex', flexDirection: 'column' } },
