@@ -13,3 +13,7 @@ docs/private-adapters.md
 
 # 密钥
 .env
+
+# Workflow outputs
+chess-digest.json
+travel-plan.json
