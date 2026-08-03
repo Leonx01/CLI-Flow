@@ -18,6 +18,7 @@ export interface WorkflowLocale {
   hint_switch_tabs: string;
   hint_fold: string;
   hint_reopen_interact: string;
+  hint_open_output: string;
   auth_browser_opened: (site: string) => string;
   auth_needs_login: (site: string) => string;
 }
@@ -36,6 +37,7 @@ export const EN: WorkflowLocale = {
   hint_switch_tabs: '←/→ switch',
   hint_fold: '←/→ fold/expand',
   hint_reopen_interact: 'enter reopen interact',
+  hint_open_output: 'o open output',
   auth_browser_opened: (site) => `Browser opened for ${site} login. Press Enter when done.`,
   auth_needs_login: (site) => `${site} requires login`,
 };
@@ -54,6 +56,7 @@ export const ZH: WorkflowLocale = {
   hint_switch_tabs: '←/→ 切换',
   hint_fold: '←/→ 折叠展开',
   hint_reopen_interact: 'enter 唤起交互',
+  hint_open_output: 'o 打开输出',
   auth_browser_opened: (site) => `浏览器已打开 ${site} 登录页，完成后按 Enter 继续`,
   auth_needs_login: (site) => `${site} 需要登录`,
 };
