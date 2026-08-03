@@ -7,31 +7,37 @@
 ![Node](https://img.shields.io/badge/Node.js-%3E%3D18-3c873a?style=flat-square)
 [![Ink](https://img.shields.io/badge/UI-Ink-0f766e?style=flat-square)](https://github.com/vadimdemedes/ink)
 
-**Agent-authored workflows over atomic CLI capabilities.**
+**Build agent-authored workflows over atomic CLI capabilities.**
+
+Turn a natural-language goal into a validated, runnable DAG powered by OpenCLI adapters.
+cliflow helps agents write, verify, execute, and repair workflows — then re-run them unattended.
 
 [Overview](#overview) • [Getting started](#getting-started) • [Agent-friendly toolkit](#agent-friendly-toolkit) • [Skills](#skills) • [Execution surfaces](#execution-surfaces) • [Memory](#memory) • [Commands](#commands)
 
 </div>
 
-Describe a goal in natural language; an AI agent composes [OpenCLI](../opencli-fork) adapters into a
-DAG, validates it, runs it, and repairs it — then you re-run the result unattended.
-
 ## Overview
 
-cliflow is an agent-oriented workflow engine built on three ideas:
+cliflow is an agent-oriented workflow engine for reliable automation.
 
-- **Atomic capabilities as CLIs** — every capability (a website, tool, or HTTP API) is an OpenCLI
-  adapter addressed uniformly as `site/command`, with uniform args and `--format` output.
-  Composition never special-cases where a capability comes from.
+### Why teams use it
+
+- **From intent to execution** — an agent turns goals into DAG workflows instead of handing you raw scripts.
+- **Built to survive real runs** — layered validation, preflight checks, strict runtime gates, and trace diagnostics.
+- **Ready for repeatability** — run interactively, unattended in CI/cron, or in agent-driven pause/resume mode.
+
+### Core model
+
+- **Atomic capabilities as CLIs** — every capability (a website, tool, or HTTP API) is an OpenCLI adapter,
+  addressed uniformly as `site/command`, with uniform args and `--format` output.
 - **Agent-led composition** — you don't hand-write YAML. A coding agent (Claude Code, Cursor, …)
-  authors, validates, runs, and debugs the workflow through the bundled skill set.
-- **Deterministic orchestration** — adapters are wired into a DAG: parallel fan-out/in, `foreach`,
-  `condition`, interact nodes, `on_error` policy, checkpoint resume, nested workflows.
+  authors, validates, runs, and debugs workflows through bundled skills.
+- **Deterministic DAG orchestration** — parallel fan-out/in, `foreach`, `condition`, interact nodes,
+  `on_error` policy, checkpoint resume, and nested workflows.
 
 > [!IMPORTANT]
-> cliflow depends on **OpenCLI** (`@jackwener/opencli`) at runtime: it discovers and invokes
-> adapters through it in-process, so a workflow step and a manual `opencli <site> <command>` call
-> hit the exact same code path.
+> cliflow depends on **OpenCLI** (`@jackwener/opencli`) at runtime: workflow steps and manual
+> `opencli <site> <command>` calls execute the exact same adapter path.
 
 ## Getting started
 
@@ -55,47 +61,41 @@ node dist/cli/index.js run workflows/interact-demo.yaml
 
 ## Agent-friendly toolkit
 
-The toolchain exists so an **agent** can build, verify, and iterate a workflow on its own — not so
-a human has to babysit it. Agent-generated pipelines tend to *look* right but fail at runtime;
-cliflow attacks that with layered checks and machine-readable feedback at every stage.
+cliflow is designed so an **agent** can build and iterate workflows with minimal human intervention.
+It combines layered checks with machine-readable feedback at every stage.
 
 **Layered validation — `validate` (static, no execution).**
 
-1. **Syntax / schema** — the file parses into a well-formed workflow.
-2. **DAG integrity** — cycle detection and dependency resolution across `depends_on`.
-3. **Dataflow** — unknown `$var` references, a producer not in the dependency chain (missing
-   `depends_on`), output-name collisions, illegal dashes in variable names.
-4. **Correctness lint** — e.g. a `flatten:false` producer consumed via `$item.<field>` without
-   `.flat()`. These are the exact traps that make agent YAML *parse* but *not run*.
+1. **Syntax / schema** — workflow parses into a valid structure.
+2. **DAG integrity** — cycle detection + dependency resolution via `depends_on`.
+3. **Dataflow checks** — unknown `$var` refs, missing producer dependency chain, output-name
+   collisions, illegal dashes in variable names.
+4. **Correctness lint** — catches common runtime traps (for example consuming `flatten:false`
+   output via `$item.<field>` without `.flat()`).
 
-**Preflight — `preflight` (live reachability).** Before execution, probes that every referenced
-adapter is registered and its backend is reachable (public-API probe with retry; unreachable public
-hosts degrade to a `warn` rather than a hard fail, since a declared domain may differ from the API
-host).
+**Preflight — `preflight` (live reachability).** Before execution, checks that referenced adapters
+are registered and backends are reachable (with retry). Unreachable public hosts degrade to `warn`
+rather than hard fail, because declared domains may differ from actual API hosts.
 
-**Trace.** Every run writes `~/.cliflow/traces/<runId>.trace.json`. `trace <id> --summary` replays
-the run step by step — data shapes in/out, item counts, the failing step + error — so the agent
-reads a diagnosis instead of scrolling logs.
+**Trace diagnostics.** Every run writes `~/.cliflow/traces/<runId>.trace.json`. Use
+`trace <id> --summary` for step-by-step replay: data shape in/out, item counts, and precise failing
+step + error.
 
-**Pause & resume (ReAct).** `--agent-mode` pauses at each interact node and emits
-`{status:"paused", pendingInteracts, context}`. The agent **observes** the context, **reasons**,
-and **acts** via `--resume --answer '{...}'`. That observe→reason→act loop over pause/resume is
-how the agent drives a run and self-iterates — no human sitting in the loop.
+**Pause & resume (ReAct).** `--agent-mode` pauses at interact nodes and emits
+`{status:"paused", pendingInteracts, context}`. The agent observes, reasons, and continues with
+`--resume --answer '{...}'`.
 
-**`--strict`.** Turns silent failures — a skipped step, a `foreach` where every item failed, or an
-empty declared output — into a non-zero exit, so the agent never mistakes a hollow run for success.
-`--allow-skip <steps>` whitelists expected skips.
+**`--strict` runtime gate.** Converts silent failure patterns (skipped steps, fully failed
+`foreach`, empty declared outputs) into non-zero exits, so agents never treat hollow runs as
+success. `--allow-skip <steps>` whitelists expected skips.
 
-Together these make agent-generated YAML *provably* executable: static layers catch structure,
-preflight catches environment, `--strict` + trace catch runtime, and memory (below) carries the
-lesson to the next attempt.
+Together these make agent-authored YAML *provably executable*: static layers catch structure,
+preflight catches environment, and `--strict` + trace catch runtime behavior.
 
 ## Skills
 
-The real deliverable is the skill set, not the engine. Install them and hand the agent a **goal**,
-not a script: it works as a goal-driven loop — write → validate → run → fix — iterating until the
-goal is met, and only escalates to a human when auto-repair fails. This is the shape of task you
-should delegate: an objective with acceptance criteria, not a step-by-step checklist.
+The product surface is the skill set, not only the engine. Give an agent a **goal**, not a script:
+it loops through write → validate → run → fix, and escalates only when auto-repair fails.
 
 | Skill | When to use |
 |-------|------------|
@@ -108,18 +108,19 @@ should delegate: an objective with acceptance criteria, not a step-by-step check
 upgrades."* The agent runs `opencli list` to discover `npm` / `github-trending` / `endoflife`
 adapters, designs a DAG (read `package.json` → parallel `{latest, weekly-downloads, EOL}` →
 staleness score → per-package LLM verdict → report), validates + preflights it, runs it under
-`--agent-mode`, and delivers `radar.md`, `upgrade-plan.md`, `report.json`. It is then
-cron-schedulable and re-runs with `--auto-approve`.
+`--agent-mode`, and delivers `radar.md`, `upgrade-plan.md`, `report.json`. Then it can be
+re-scheduled via cron with `--auto-approve`.
 
 ## Execution surfaces
 
-One workflow, three ways to run — differing in who answers interact nodes and who reads output:
+One workflow, three execution surfaces — choose by who answers interact nodes and who consumes the
+output:
 
 | Mode | Command | How it runs |
 |------|---------|-------------|
 | **TUI** (default, tty) | `run <f>` | Interactive: a human answers prompts and watches the live tree |
 | **Unattended** | `run <f> --auto-approve -f json` | Runs on preset args, **agent out of the loop** — for cron / CI |
-| **Agent-driven** | `run <f> --agent-mode -f json` | **Pause & resume + ReAct**: pauses at interact nodes, agent decides and `--resume`s — the self-iteration path |
+| **Agent-driven** | `run <f> --agent-mode -f json` | **Pause & resume + ReAct**: pauses at interact nodes, agent decides and `--resume`s — self-iteration path |
 
 > [!TIP]
 > `-f json` disables the UI and emits machine-readable output.
@@ -129,34 +130,30 @@ One workflow, three ways to run — differing in who answers interact nodes and 
 In a tty, cliflow renders a live terminal UI built on **[Ink](https://github.com/vadimdemedes/ink)**
 (React for the terminal): a workflow **tree** with per-step status and timing, parallel layers
 shown side by side, and an **interact overlay** for `select` / `multi-select` / `input` /
-`confirm` prompts. It is purely a human surface — `-f json` turns it off so machines and agents get
-structured output instead.
+`confirm` prompts. It is a human surface only — `-f json` turns it off for structured outputs.
 
 ## Memory
 
 cliflow persists workflow-development knowledge across sessions under
-`~/.cliflow/memory/<workflow>/`, so the next run (or the next agent) starts from what was learned:
+`~/.cliflow/memory/<workflow>/`, so the next run (or next agent) starts from what was learned:
 
 | File | Written by | Contents |
 |------|-----------|----------|
 | `insights.json` | engine, every run | run count, success rate, avg duration, recent failures (+ trace paths) |
-| `snapshots/` | engine, on success | the exact YAML archived by definition hash; `diff` any two versions |
+| `snapshots/` | engine, on success | exact YAML archived by definition hash; `diff` any two versions |
 | `notes.md` | agent / human | free-form notes tagged with the YAML's definition hash |
 | `_adapters/<site>.md` | agent / human | per-adapter gotchas, shared across all workflows |
 
 **When it updates.** `insights` and `snapshots` are written **automatically** after each run
-(snapshot only on success, keyed by hash). Notes are written on demand — and cliflow decides *when*
-to nudge via a context-aware **tool-hint** printed after a run (also surfaced as `memoryHint` in
-JSON output):
+(snapshot only on success, keyed by hash). Notes are written on demand, and cliflow prints a
+context-aware **tool-hint** after runs (also surfaced as `memoryHint` in JSON output):
 
-- run failed **and** notes exist → *read the related notes first*
-- run failed **and** the failing adapter has known-issue memory → *read the adapter gotchas*
+- run failed **and** notes exist → *read related notes first*
+- run failed **and** failing adapter has known issues → *read adapter gotchas*
 - run failed → *after fixing, add a note*
-- the YAML changed since a note was written → that note is flagged **stale**, *review it*
+- YAML changed since note creation → note marked **stale**, *review it*
 
-The skills instruct the agent to act on these hints, closing the learn-from-last-run loop: a
-failure becomes a note, a note becomes context for the next attempt, and a changed workflow
-retires the notes that no longer apply.
+Skills guide agents to act on these hints, closing the learn-from-last-run loop.
 
 ## Commands
 
@@ -176,7 +173,7 @@ Bundled under [`workflows/`](./workflows):
 
 | Workflow | Shows |
 |----------|-------|
-| `tech-stack-radar.yaml` | the flagship: dependency inventory → parallel enrichment → LLM verdicts → upgrade plan |
+| `tech-stack-radar.yaml` | flagship: dependency inventory → parallel enrichment → LLM verdicts → upgrade plan |
 | `weather-travel-planner.yaml` | parallel fan-out/in, dataflow between steps, interact nodes |
 | `chess-player-digest.yaml` | adapter chaining, LLM verdict steps |
 | `interact-demo.yaml` | every interact type (`select` / `multi-select` / `input` / `confirm`) |
