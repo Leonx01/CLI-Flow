@@ -9,6 +9,8 @@ import { deriveProgress, deriveStatus, formatDuration, COLORS } from '../core/st
 import type { WorkflowNode, InteractRequest } from '../core/types.js';
 import { InteractTabBar, extractTabLabel } from './InteractTabBar.js';
 import { getLocale } from '../../util/locale.js';
+import { openInFileManager } from '../../util/open-file.js';
+import { log } from '../../util/utils.js';
 
 // ---------------------------------------------------------------------------
 // StatusBar — bottom status indicator
@@ -21,9 +23,10 @@ interface StatusBarProps {
   overlayVisible?: boolean;
   activeInteractSpec?: ResolvedInteractSpec;
   hasMultipleTabs?: boolean;
+  hasOutputPaths?: boolean;
 }
 
-function StatusBar({ root, interactDismissed, interactCount, overlayVisible, activeInteractSpec, hasMultipleTabs }: StatusBarProps) {
+function StatusBar({ root, interactDismissed, interactCount, overlayVisible, activeInteractSpec, hasMultipleTabs, hasOutputPaths }: StatusBarProps) {
   const status = deriveStatus(root);
   const running = status === 'running' || status === 'interacting';
   const failed = status === 'failed';
@@ -45,7 +48,9 @@ function StatusBar({ root, interactDismissed, interactCount, overlayVisible, act
   } else if (interactDismissed) {
     hint = `${locale.hint_move} · ${locale.hint_reopen_interact}(${interactCount ?? 0}) · ${locale.hint_esc_exit}`;
   } else {
-    hint = `${locale.hint_move} · ${locale.hint_fold} · ${locale.hint_esc_exit}`;
+    hint = `${locale.hint_move} · ${locale.hint_fold}`;
+    if (hasOutputPaths) hint += ` · ${locale.hint_open_output}`;
+    hint += ` · ${locale.hint_esc_exit}`;
   }
 
   return (
@@ -231,6 +236,19 @@ export function App({ adapter }: AppProps) {
         setRoot((r) => toggleCollapsed(r, current.path));
       }
     }
+
+    // 'o' — reveal selected step's output files in the OS file manager.
+    // Only when the workflow has finished, so we don't open half-written files.
+    if (input === 'o' && workflowFinished) {
+      const outputs = current.node.meta?.outputPaths;
+      if (outputs && outputs.length > 0) {
+        for (const p of outputs) {
+          openInFileManager(p).catch((err: unknown) => {
+            log.warn?.(`Failed to open ${p}: ${err instanceof Error ? err.message : String(err)}`);
+          });
+        }
+      }
+    }
   }, { isActive: true });
 
   // Handle interact completion
@@ -247,6 +265,10 @@ export function App({ adapter }: AppProps) {
 
   const activeInteract = interacts.find(r => r.id === activeTabId) ?? null;
   const tabs = interacts.map(extractTabLabel);
+
+  // Whether the currently selected node has output files to reveal ('o' key)
+  const selectedOutputPaths = rows[selectedIndex]?.node.meta?.outputPaths;
+  const hasOutputPaths = workflowFinished && !!selectedOutputPaths && selectedOutputPaths.length > 0;
 
   return (
     <Box flexDirection="column">
@@ -284,6 +306,7 @@ export function App({ adapter }: AppProps) {
           overlayVisible={interacts.length > 0 && !interactDismissed}
           activeInteractSpec={activeInteract?.spec as ResolvedInteractSpec}
           hasMultipleTabs={interacts.length > 1}
+          hasOutputPaths={hasOutputPaths}
         />
       </Box>
     </Box>

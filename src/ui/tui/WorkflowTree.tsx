@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import { Box, Text } from 'ink';
 import type { WorkflowNode, FlatRow, Status } from '../core/types.js';
 import {
@@ -9,6 +10,16 @@ import {
   statusStyle,
   donePartialFailStyle,
 } from '../core/status.js';
+
+// ---------------------------------------------------------------------------
+// OSC 8 terminal hyperlink — clickable in Windows Terminal, iTerm2, VS Code
+// ---------------------------------------------------------------------------
+
+function osc8Link(filePath: string): string {
+  const abs = path.resolve(filePath);
+  const fileUrl = 'file:///' + abs.replace(/\\/g, '/');
+  return `\x1b]8;;${fileUrl}\x1b\\${filePath}\x1b]8;;\x1b\\`;
+}
 
 // ---------------------------------------------------------------------------
 // Meta text: rendered to the right of the label in gray
@@ -176,14 +187,16 @@ function Row({ row, selected, spinnerTick, now, interactPending }: RowProps) {
           </Text>
         </Box>
       ) : null}
-      {/* Output path line beneath the row */}
-      {node.meta?.outputPath && status === 'done' ? (
-        <Box>
-          <Text color={COLORS.dim}>{prefix}{'   '}</Text>
-          <Text color={COLORS.green} dimColor>
-            {'⎿ Output: '}{node.meta.outputPath}
-          </Text>
-        </Box>
+      {/* Output path lines beneath the row (OSC 8 links when supported) */}
+      {node.meta?.outputPaths && node.meta.outputPaths.length > 0 && status === 'done' ? (
+        node.meta.outputPaths.map((p, idx) => (
+          <Box key={idx}>
+            <Text color={COLORS.dim}>{prefix}{'   '}</Text>
+            <Text color={COLORS.green} dimColor>
+              {'⎿ Output: '}{osc8Link(p)}
+            </Text>
+          </Box>
+        ))
       ) : null}
     </Box>
   );

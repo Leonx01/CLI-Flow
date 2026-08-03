@@ -13,6 +13,7 @@ import type {
   TraceEvent,
 } from '../../schema/types.js';
 import type { WorkflowNode, Status, InteractRequest, NodeMeta } from './types.js';
+import { extractOutputPaths } from '../../util/output-paths.js';
 
 // ---------------------------------------------------------------------------
 // Tree helpers
@@ -301,16 +302,12 @@ export class InkAdapter {
       node.meta.foreachErrors = event.foreachErrors;
     }
 
-    // Extract output file path if available
+    // Extract output file paths if available (shared heuristic covers
+    // save-json's [{path,size}], radar-report's [{file,rows}], path strings)
     if (event.output?.value) {
-      const val = event.output.value;
-      // Handle array of objects with path field (e.g. local/save-json returns [{path, size}])
-      if (Array.isArray(val) && val.length > 0 && val[0]?.path) {
-        node.meta.outputPath = val[0].path;
-      } else if (typeof val === 'string' && (val.startsWith('/') || val.startsWith('./'))) {
-        node.meta.outputPath = val;
-      } else if (typeof val === 'object' && val !== null && 'path' in val) {
-        node.meta.outputPath = (val as any).path;
+      const paths = extractOutputPaths(event.output.value);
+      if (paths.length > 0) {
+        node.meta.outputPaths = paths;
       }
     }
 
@@ -434,7 +431,7 @@ export class InkAdapter {
   getOutputPaths(): string[] {
     const paths: string[] = [];
     const walk = (node: WorkflowNode) => {
-      if (node.meta?.outputPath) paths.push(node.meta.outputPath);
+      if (node.meta?.outputPaths) paths.push(...node.meta.outputPaths);
       node.children?.forEach(walk);
     };
     walk(this.root);

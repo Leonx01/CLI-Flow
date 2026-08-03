@@ -39,7 +39,7 @@ export interface NodeMeta {
   /** 跳过原因 */
   skipReason?: 'on_error_skip' | 'missing_var' | 'condition_false' | 'dependency_failed' | 'auth_skipped' | 'interact_pending';
   /** 步骤输出的文件路径 */
-  outputPath?: string;
+  outputPaths?: string[];
   /** 依赖步骤 */
   dependsOn?: string[];
   /** 带序号的依赖步骤显示文本，如 ['#5 rank-authors', '#4 search-papers'] */

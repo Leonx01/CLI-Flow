@@ -1,0 +1,22 @@
+name: output-test
+description: Smoke test for output path handling (save-json + radar-report shapes)
+
+steps:
+  gen-a:
+    adapter: local/save-json
+    args:
+      path: ./output/smoke-a.json
+      data: { "hello": "world" }
+
+  gen-b:
+    adapter: local/save-json
+    args:
+      path: ./output/smoke-b.json
+      data: { "second": "file" }
+
+  both:
+    adapter: local/save-json
+    args:
+      path: ./output/smoke-both.json
+      data: ${{ args.gen_a + args.gen_b }}
+    depends_on: [gen-a, gen-b]

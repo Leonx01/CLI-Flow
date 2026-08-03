@@ -1,0 +1,16 @@
+name: foreach-test
+description: Smoke test for foreach progress events through the web UI
+
+inputs:
+  items:
+    type: array
+    default: [alpha, beta, gamma]
+
+steps:
+  save-each:
+    adapter: local/save-json
+    foreach: $items
+    concurrency: 2
+    args:
+      path: ./output/item-${{ item }}.json
+      data: ${{ item }}

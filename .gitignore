@@ -17,3 +17,6 @@ docs/private-adapters.md
 # Workflow outputs
 chess-digest.json
 travel-plan.json
+
+# Claude Code session artifacts (incl. stale worktree copies)
+.claude/
