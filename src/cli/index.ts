@@ -22,9 +22,12 @@ async function bootstrap() {
   // Each bridge's tools auto-register as adapters (e.g. mcp-ddg/search).
   try {
     const { discoverBridges } = await import('@jackwener/opencli/bridge/discovery' as string);
-    await discoverBridges();
+    await Promise.race([
+      discoverBridges(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+    ]);
   } catch {
-    // Bridge discovery is optional — if the module or config is absent, continue.
+    // Bridge discovery is optional — if the module or config is absent, or times out, continue.
   }
 }
 
@@ -44,6 +47,7 @@ program
   .option('--input <key=value...>', 'Workflow input parameters (key=value pairs)')
   .option('--arg <key=value...>', 'Alias for --input')
   .option('--no-trace', 'Disable execution trace recording')
+  .option('--ui <mode>', 'UI mode: tui (terminal), web (browser), json (machine-readable)', 'tui')
   .option('--auto-approve', 'Auto-resolve all interact prompts without user input')
   .option('--agent-mode', 'Pause on interact nodes and output decision as JSON (for agent-driven execution)')
   .option('--answer <json>', 'Answers for pending interacts when resuming, as {"<stepName>": <answer>, ...} — answer all currently-pending steps in one call')
@@ -105,15 +109,31 @@ program
       }
     }
 
-    const useTUI = process.stderr.isTTY && !opts.dryRun && !opts.verbose && opts.format === 'table';
+    const uiMode = opts.ui || (process.stderr.isTTY ? 'tui' : 'json');
 
     let callbacks: ReturnType<typeof mergeCallbacks>;
     let cleanup: (() => void) | null = null;
     let waitForTUIExit: (() => Promise<void>) | null = null;
     let getOutputPaths: (() => string[]) | null = null;
     let hasLiveTUI = false;
+    let webServer: { httpServer: { close: () => void } } | null = null;
 
-    if (useTUI) {
+    if (uiMode === 'web') {
+      try {
+        const { createWebServer } = await import('../web/server.js');
+        const server = await createWebServer({ definition });
+        webServer = server;
+        const webCallbacks = server.adapter.getCallbacks();
+        // mergeCallbacks: first onInteract wins → WebAdapter must be first
+        callbacks = mergeCallbacks(webCallbacks, traceHelper?.callbacks);
+        hasLiveTUI = true;
+        console.error(`\n  Web UI → http://localhost:${server.port}\n`);
+      } catch (err) {
+        console.error('Failed to start web server:', err instanceof Error ? err.message : String(err));
+        console.error(err instanceof Error ? err.stack : '');
+        process.exit(1);
+      }
+    } else if (uiMode === 'tui') {
       const { createInkRenderer } = await import('../ui/tui/renderer.js');
       const inkRenderer = await createInkRenderer({
         name: definition.name || 'workflow',
@@ -162,19 +182,32 @@ program
     }
 
     let result;
-    try {
-      result = await executeWorkflow(definition, inputArgs, {
-        debug: opts.verbose,
-        resumeRunId: opts.resume,
-        dryRun: opts.dryRun,
-        quiet: hasLiveTUI,
-        callbacks,
-        interactAnswer,
-      });
-    } finally {
-      if (waitForTUIExit) await waitForTUIExit();
-      cleanup?.();
+    if (uiMode === 'web') {
+      // Web mode: don't auto-run. User clicks ▶ Run in the browser.
+      // Just keep the server alive until Ctrl+C.
+      console.error(`\nPress Ctrl+C to stop the server.\n`);
+      await new Promise(() => {}); // hang until SIGINT
+    } else {
+      try {
+        result = await executeWorkflow(definition, inputArgs, {
+          debug: opts.verbose,
+          resumeRunId: opts.resume,
+          dryRun: opts.dryRun,
+          quiet: hasLiveTUI,
+          callbacks,
+          interactAnswer,
+        });
+      } finally {
+        if (waitForTUIExit) await waitForTUIExit();
+        cleanup?.();
+      }
     }
+
+    // Web mode: server hung until SIGINT, nothing more to do
+    if (uiMode === 'web') return;
+    // Unreachable in practice (an executeWorkflow throw propagates out of the
+    // try/finally above) — guard keeps the type-narrowing happy.
+    if (!result) return;
 
     const traceFilePath = traceHelper?.finalize(result.status, result.finishedAt, {
       terminationReason: result.terminationReason,
