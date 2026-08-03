@@ -51,7 +51,6 @@ program
   .option('--auto-approve', 'Auto-resolve all interact prompts without user input')
   .option('--agent-mode', 'Pause on interact nodes and output decision as JSON (for agent-driven execution)')
   .option('--answer <json>', 'Answers for pending interacts when resuming, as {"<stepName>": <answer>, ...} — answer all currently-pending steps in one call')
-  .option('--prefs', 'Pre-fill interact prompts with previously saved preferences')
   .option('--preflight', 'Run preflight checks before execution')
   .option('--strict', 'Exit non-zero (code 2) if any step is skipped, has foreach item failures, or a declared output is empty')
   .option('--allow-skip <steps>', 'Comma-separated step names allowed to be skipped under --strict')
@@ -159,11 +158,6 @@ program
       } else {
         callbacks = mergeCallbacks(null, traceHelper?.callbacks);
       }
-    }
-
-    if (!opts.autoApprove && !opts.agentMode && callbacks.onInteract) {
-      const { wrapCallbacksWithPrefs } = await import('../engine/prefs.js');
-      callbacks = wrapCallbacksWithPrefs(callbacks, definition.name, { inject: !!opts.prefs });
     }
 
     // Parse --answer JSON if provided (map of stepName -> answer)
@@ -492,54 +486,6 @@ program
     const checkpoints = listCheckpoints();
     for (const cp of checkpoints) {
       console.log(`  ${cp.runId}  ${cp.workflowName.padEnd(24)}  ${cp.completedSteps.length} steps  ${new Date(cp.updatedAt).toISOString()}`);
-    }
-  });
-
-// ── prefs ────────────────────────────────────────────────────────────────────
-
-program
-  .command('prefs')
-  .argument('[workflow]', 'Workflow name (omit to list all)')
-  .option('--clear', 'Clear saved preferences for this workflow')
-  .description('View or manage saved interaction preferences')
-  .action(async (workflow: string | undefined, opts) => {
-    const { loadPrefs, deletePrefs, listPrefs } = await import('../engine/prefs.js');
-
-    if (!workflow) {
-      const all = listPrefs();
-      if (all.length === 0) {
-        console.log('No saved preferences.');
-        return;
-      }
-      console.log('\nSaved preferences:\n');
-      for (const p of all) {
-        const date = p.updatedAt ? new Date(p.updatedAt).toISOString().slice(0, 10) : '—';
-        console.log(`  ${p.workflow.padEnd(28)} ${p.entries} entries  ${ANSI.dim}${date}${ANSI.reset}`);
-      }
-      return;
-    }
-
-    if (opts.clear) {
-      const deleted = deletePrefs(workflow);
-      console.log(deleted
-        ? `${ANSI.green}✓${ANSI.reset} Cleared preferences for "${workflow}".`
-        : `No preferences found for "${workflow}".`);
-      return;
-    }
-
-    const store = loadPrefs(workflow);
-    const entries = Object.entries(store);
-    if (entries.length === 0) {
-      console.log(`No saved preferences for "${workflow}".`);
-      return;
-    }
-
-    console.log(`\nPreferences for "${workflow}":\n`);
-    for (const [stepName, entry] of entries) {
-      const date = new Date(entry.savedAt).toISOString().slice(0, 10);
-      const valueStr = JSON.stringify(entry.value);
-      const display = valueStr.length > 60 ? valueStr.slice(0, 57) + '...' : valueStr;
-      console.log(`  ${stepName.padEnd(24)} ${ANSI.dim}${date}${ANSI.reset}  ${display}`);
     }
   });
 

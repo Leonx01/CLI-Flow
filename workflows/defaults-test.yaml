@@ -1,0 +1,44 @@
+name: defaults-test
+description: Smoke test for YAML interact defaults on all types
+
+inputs:
+  shops:
+    type: array
+    default:
+      - { name: "Store A", id: 1 }
+      - { name: "Store B", id: 2 }
+      - { name: "Store C", id: 3 }
+  products:
+    type: array
+    default:
+      - { name: "Widget", price: 9.9 }
+      - { name: "Gadget", price: 19.9 }
+      - { name: "Gizmo", price: 29.9 }
+
+steps:
+  pick-shop:
+    description: "Select: default picks second option"
+    interact:
+      type: select
+      from: $shops
+      display: name
+      message: "Pick a shop"
+      default: 1
+
+  pick-products:
+    description: "Multi-select: default picks first and third"
+    interact:
+      type: multi-select
+      from: $products
+      display: name
+      message: "Pick products"
+      default: [0, 2]
+    depends_on: [pick-shop]
+
+  confirm-action:
+    description: "Confirm: default is false"
+    interact:
+      type: confirm
+      message: "Proceed?"
+      default: false
+    depends_on: [pick-products]
