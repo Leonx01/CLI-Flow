@@ -1046,17 +1046,28 @@ async function _handleInteractProduceOutput(
         : String(item),
       value: item,
     }));
-    spec = { type: interact.type, message: interact.message, options };
-    fallbackValue = interact.type === 'select'
-      ? options[0]?.value
-      : options.map(o => o.value);
+    if (interact.type === 'select') {
+      const selIdx = typeof interact.default === 'number' ? interact.default : 0;
+      const selVal = options[selIdx]?.value ?? options[0]?.value;
+      spec = { type: 'select', message: interact.message, options, defaultValue: selVal };
+      fallbackValue = selVal;
+    } else {
+      // multi-select
+      const idxs = Array.isArray(interact.default) ? interact.default : undefined;
+      const defVals = idxs
+        ? idxs.map(i => options[i]).filter(Boolean).map(o => o.value)
+        : undefined;
+      spec = { type: 'multi-select', message: interact.message, options, defaultValues: defVals };
+      fallbackValue = defVals ?? options.map(o => o.value);
+    }
   } else if (interact.type === 'input') {
     spec = { type: 'input', message: interact.message, default: interact.default };
     fallbackValue = interact.default ?? '';
   } else if (interact.type === 'confirm') {
     const message = interact.message || `Proceed with step "${stepName}"?`;
-    spec = { type: 'confirm', message };
-    fallbackValue = true;
+    const confDef = typeof interact.default === 'boolean' ? interact.default : undefined;
+    spec = { type: 'confirm', message, defaultValue: confDef ?? true };
+    fallbackValue = confDef ?? true;
   } else {
     throw new Error(`Step "${stepName}" interact.type "${(interact as any).type}" is not a pure output-producing interaction`);
   }

@@ -19,15 +19,15 @@ export interface WorkflowInput {
 // ── Interact types ──────────────────────────────────────────────────────────
 
 export type InteractSpec =
-  | { type: 'confirm'; message?: string }
-  | { type: 'select'; from: string; display?: string; message: string }
-  | { type: 'multi-select'; from: string; display?: string; message: string }
+  | { type: 'confirm'; message?: string; default?: boolean }
+  | { type: 'select'; from: string; display?: string; message: string; default?: number }
+  | { type: 'multi-select'; from: string; display?: string; message: string; default?: number[] }
   | { type: 'input'; message: string; default?: string };
 
 export type ResolvedInteractSpec =
-  | { type: 'confirm'; message: string }
-  | { type: 'select'; message: string; options: { label: string; value: unknown }[] }
-  | { type: 'multi-select'; message: string; options: { label: string; value: unknown }[] }
+  | { type: 'confirm'; message: string; defaultValue?: boolean }
+  | { type: 'select'; message: string; options: { label: string; value: unknown }[]; defaultValue?: unknown }
+  | { type: 'multi-select'; message: string; options: { label: string; value: unknown }[]; defaultValues?: unknown[] }
   | { type: 'input'; message: string; default?: string }
   | { type: 'auth'; message: string; site: string; timeout: number };
 

@@ -5,6 +5,8 @@ interface InteractSpec {
   message: string;
   options?: { label: string; value: unknown }[];
   default?: string;
+  defaultValue?: unknown;
+  defaultValues?: unknown[];
 }
 
 interface InteractPanelProps {
@@ -60,7 +62,9 @@ function optionStyle(selected: boolean): React.CSSProperties {
 export default function InteractPanel({ interact, onSubmit }: InteractPanelProps) {
   const { spec, stepName } = interact;
   const [value, setValue] = useState<unknown>(
-    spec.type === 'multi-select' ? [] : spec.type === 'select' ? spec.options?.[0]?.value : spec.default || ''
+    spec.type === 'multi-select' ? (spec.defaultValues ?? [])
+    : spec.type === 'select' ? (spec.defaultValue ?? spec.options?.[0]?.value)
+    : spec.default || ''
   );
   const [inputText, setInputText] = useState(spec.default || '');
 

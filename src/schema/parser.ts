@@ -31,6 +31,7 @@ function parseInteract(stepName: string, raw: unknown): InteractSpec {
       return {
         type: 'confirm',
         message: obj.message !== undefined ? String(obj.message) : undefined,
+        default: typeof obj.default === 'boolean' ? obj.default : undefined,
       };
     case 'select':
     case 'multi-select':
@@ -40,12 +41,28 @@ function parseInteract(stepName: string, raw: unknown): InteractSpec {
       if (!obj.message || typeof obj.message !== 'string') {
         throw new WorkflowParseError(`Step "${stepName}" interact.type="${type}" requires a "message" field`);
       }
-      return {
-        type,
-        from: obj.from,
-        display: obj.display !== undefined ? String(obj.display) : undefined,
-        message: obj.message,
-      };
+      if (type === 'select') {
+        const d = obj.default;
+        return {
+          type: 'select',
+          from: obj.from,
+          display: obj.display !== undefined ? String(obj.display) : undefined,
+          message: obj.message,
+          default: typeof d === 'number' && d >= 0 ? d : undefined,
+        };
+      }
+      // multi-select
+      {
+        const d = obj.default;
+        const arr = Array.isArray(d) && d.every((v: unknown) => typeof v === 'number') ? d as number[] : undefined;
+        return {
+          type: 'multi-select',
+          from: obj.from,
+          display: obj.display !== undefined ? String(obj.display) : undefined,
+          message: obj.message,
+          default: arr,
+        };
+      }
     case 'input':
       if (!obj.message || typeof obj.message !== 'string') {
         throw new WorkflowParseError(`Step "${stepName}" interact.type="input" requires a "message" field`);

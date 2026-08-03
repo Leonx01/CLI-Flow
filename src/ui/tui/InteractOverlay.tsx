@@ -22,7 +22,8 @@ interface InteractOverlayProps {
 // ---------------------------------------------------------------------------
 
 function ConfirmPrompt({ spec, onComplete }: InteractOverlayProps) {
-  const [cursor, setCursor] = useState(0);
+  const defaultValue = 'defaultValue' in spec ? spec.defaultValue : true;
+  const [cursor, setCursor] = useState(defaultValue === false ? 1 : 0);
   const locale = getLocale();
 
   useInput((_input, key) => {
@@ -87,7 +88,10 @@ function AuthPrompt({ spec, onComplete }: InteractOverlayProps) {
 
 function SelectPrompt({ spec, onComplete }: InteractOverlayProps) {
   const options = 'options' in spec ? spec.options : [];
-  const [cursor, setCursor] = useState(0);
+  const defaultIdx = 'defaultValue' in spec && spec.defaultValue !== undefined
+    ? options.findIndex(o => o.value === spec.defaultValue)
+    : -1;
+  const [cursor, setCursor] = useState(defaultIdx >= 0 ? defaultIdx : 0);
   const [windowStart, setWindowStart] = useState(0);
   const needsScroll = options.length > VISIBLE_WINDOW;
 
@@ -141,8 +145,15 @@ function SelectPrompt({ spec, onComplete }: InteractOverlayProps) {
 
 function MultiSelectPrompt({ spec, onComplete }: InteractOverlayProps) {
   const options = 'options' in spec ? spec.options : [];
+  const defaultIndices = 'defaultValues' in spec && Array.isArray(spec.defaultValues)
+    ? new Set(
+        spec.defaultValues
+          .map(v => options.findIndex(o => o.value === v))
+          .filter(i => i >= 0),
+      )
+    : new Set<number>();
   const [cursor, setCursor] = useState(0);
-  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [selected, setSelected] = useState<Set<number>>(defaultIndices);
   const [windowStart, setWindowStart] = useState(0);
   const needsScroll = options.length > VISIBLE_WINDOW;
 

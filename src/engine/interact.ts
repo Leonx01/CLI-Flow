@@ -36,10 +36,10 @@ export class InteractPauseSignal extends Error {
 
 function autoResolveSpec(spec: ResolvedInteractSpec): unknown {
   switch (spec.type) {
-    case 'confirm': return true;
-    case 'select': return 'options' in spec ? spec.options[0]?.value : undefined;
-    case 'multi-select': return 'options' in spec ? spec.options.map(o => o.value) : [];
-    case 'input': return 'default' in spec ? (spec.default ?? '') : '';
+    case 'confirm': return spec.defaultValue ?? true;
+    case 'select': return spec.defaultValue ?? spec.options[0]?.value;
+    case 'multi-select': return spec.defaultValues ?? spec.options.map(o => o.value);
+    case 'input': return spec.default ?? '';
     case 'auth': return 'skip';
   }
 }
