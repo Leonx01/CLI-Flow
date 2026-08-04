@@ -1,0 +1,98 @@
+name: setup-github-app-agent
+description: Automate GitHub App creation and git configuration for AI agent identity
+
+# Input parameters
+inputs:
+  agent_name: { type: string, required: true, description: "Agent name (e.g. agent-paaru)" }
+  repo_url: { type: string, required: true, description: "Repository URL (e.g. https://github.com/owner/repo.git)" }
+  repo_path: { type: string, required: true, description: "Local path to git repository" }
+  private_key_path: { type: string, required: false, description: "Path to existing private key .pem file" }
+  installation_id: { type: number, required: false, description: "Installation ID (auto-detects if not provided)" }
+
+# Output declarations
+outputs: [bot_name, bot_email, setup_status]
+
+# Workflow-level settings
+timeout: 1800
+max_parallel: 10
+on_error: stop
+
+# All github/* browser steps reuse the logged-in browser session
+# (Strategy.COOKIE / Strategy.UI) — no GITHUB_TOKEN required.
+# Permissions are left at GitHub's form defaults when creating via UI;
+# adjust them afterwards in Settings → App permissions if needed.
+steps:
+  # Step 1: Create GitHub App via browser UI (if not exists)
+  create_github_app:
+    adapter: github/create-app
+    args:
+      name: $agent_name
+      homepage: $repo_url
+    output:
+      as: app_info
+      map:
+        app_id: id
+        app_slug: slug
+        app_name: name
+    on_error: skip  # Skip if app already exists
+
+  # Step 2: List existing apps to get app ID (if create was skipped)
+  list_apps:
+    adapter: github/list-apps
+    output:
+      as: apps_list
+    depends_on: [create_github_app]
+
+  # Step 3: Get bot user ID for email configuration
+  get_bot_id:
+    adapter: github/bot-id
+    args:
+      slug: $agent_name
+    output:
+      as: bot_info
+      map:
+        bot_user_id: id
+        bot_login: login
+        bot_email: bot_email
+    depends_on: [list_apps]
+
+  # Step 4: Generate installation token (only if private_key_path is provided)
+  generate_token:
+    adapter: github/generate-token
+    args:
+      app-id: "${{ args.app_info.app_id }}"
+      installation-id: "${{ args.installation_id }}"
+      private-key: $private_key_path
+    output:
+      as: token_info
+      map:
+        installation_token: token
+        token_expires_at: expires_at
+    depends_on: [get_bot_id]
+    condition: "${{ args.private_key_path && args.private_key_path !== '' }}"
+
+  # Step 5: Configure git repository with bot identity
+  setup_git_repo:
+    adapter: github/setup-git
+    args:
+      repo-path: $repo_path
+      bot-name: "${{ args.bot_info.bot_login }}"
+      bot-email: "${{ args.bot_info.bot_email }}"
+      token: "${{ args.token_info.installation_token }}"
+      repo-url: $repo_url
+    output:
+      as: git_config
+      map:
+        setup_status: status
+        configured_user: user_name
+        configured_email: user_email
+    depends_on: [generate_token]
+
+  # Step 6: Save configuration to local file
+  save_config:
+    adapter: local/save-json
+    args:
+      path: "./agent-git-config.json"
+      data: "${{ JSON.stringify({ agent_name: args.agent_name, app_id: args.app_info.app_id, bot_user_id: args.bot_info.bot_user_id, bot_email: args.bot_info.bot_email, repo_url: args.repo_url, repo_path: args.repo_path }) }}"
+    output: config_saved
+    depends_on: [setup_git_repo]
