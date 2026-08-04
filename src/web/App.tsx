@@ -3,6 +3,7 @@ import Canvas from './Canvas.js';
 import Toolbar from './panels/Toolbar.js';
 import InteractPanel from './panels/InteractPanel.js';
 import DetailPanel from './panels/DetailPanel.js';
+import InputsPanel from './panels/InputsPanel.js';
 import TracePanel from './panels/TracePanel.js';
 import type { WorkflowDefinition } from '../schema/types.js';
 import type { WSMessage, StepUIState } from './types.js';
@@ -29,6 +30,7 @@ export default function App() {
     stepName: string;
     spec: { type: string; message: string; options?: { label: string; value: unknown }[]; default?: string };
   } | null>(null);
+  const [inputValues, setInputValues] = useState<Record<string, unknown>>({});
   const [trace, setTrace] = useState<TraceEntry[]>([]);
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [connected, setConnected] = useState(false);
@@ -42,7 +44,17 @@ export default function App() {
   useEffect(() => {
     fetch('/api/definition')
       .then(r => r.json())
-      .then(def => setDefinition(def))
+      .then(def => {
+        setDefinition(def);
+        // Initialize inputs with defaults from the schema
+        const defaults: Record<string, unknown> = {};
+        if (def.inputs) {
+          for (const [k, spec] of Object.entries(def.inputs as Record<string, { default?: unknown }>)) {
+            if (spec.default !== undefined) defaults[k] = spec.default;
+          }
+        }
+        setInputValues(defaults);
+      })
       .catch(() => {});
   }, []);
 
@@ -176,8 +188,13 @@ export default function App() {
     setTrace([]);
     setWorkflowStatus('running');
     setTrace(prev => addTrace(prev, { ts: Date.now(), type: 'workflow', message: '▶ Run clicked', level: 'info' }));
-    fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
-  }, [ws]);
+    // Only send non-empty inputs
+    const payload: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(inputValues)) {
+      if (v !== undefined && v !== null && v !== '') payload[k] = v;
+    }
+    fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ inputs: payload }) });
+  }, [ws, inputValues]);
 
   // Auto-run: with the toggle ON, start the workflow once per server process.
   // /api/state.runStarted guards against re-running after a page reload.
@@ -206,6 +223,10 @@ export default function App() {
   const handleInteractSubmit = useCallback((answer: unknown) => {
     fetch('/api/interact', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answer }) });
     setPendingInteract(null);
+  }, []);
+
+  const handleInputChange = useCallback((key: string, value: unknown) => {
+    setInputValues(prev => ({ ...prev, [key]: value }));
   }, []);
 
   if (!definition) {
@@ -247,11 +268,14 @@ export default function App() {
       React.createElement('div', { style: { width: 320, borderLeft: '1px solid var(--border-color)', overflow: 'auto', background: 'var(--bg-panel)' } },
         pendingInteract
           ? React.createElement(InteractPanel, { interact: pendingInteract, onSubmit: handleInteractSubmit })
-          : React.createElement(DetailPanel, {
-              stepName: selectedNode,
-              step: selectedNode ? definition.steps[selectedNode] : undefined,
-              status: selectedNode ? stepStatus[selectedNode] : undefined,
-            }),
+          : React.createElement('div', null,
+              React.createElement(InputsPanel, { inputs: definition.inputs || {}, values: inputValues, onChange: handleInputChange, disabled: workflowStatus === 'running' }),
+              selectedNode && React.createElement(DetailPanel, {
+                stepName: selectedNode,
+                step: definition.steps[selectedNode],
+                status: stepStatus[selectedNode],
+              }),
+            ),
       ),
     ),
   );
