@@ -8,8 +8,6 @@
 ![Node](https://img.shields.io/badge/Node.js-%3E%3D18-3c873a?style=flat-square)
 [![Ink](https://img.shields.io/badge/UI-Ink-0f766e?style=flat-square)](https://github.com/vadimdemedes/ink)
 
-<a href="https://trendshift.io/repositories/25882?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-25882" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/25882/daily" alt="agentscope-ai%2FQwenPaw | Trendshift" width="250" height="55"/></a>
-
 **Agent-authored workflows over atomic CLI capabilities.**
 
 [Overview](#overview) • [Getting started](#getting-started) • [Agent-friendly toolkit](#agent-friendly-toolkit) • [Skills](#skills) • [Execution surfaces](#execution-surfaces) • [Memory](#memory) • [Commands](#commands)
